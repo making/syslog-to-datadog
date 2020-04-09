@@ -22,6 +22,8 @@ DD_API_KEY=****************************
 
 docker run \
   -e DD_API_KEY=${DD_API_KEY} \
+  -e DD_SOURCE=my-source-name \
+  -e FOUNDATION=sandbox \
   -e XPACK_MANAGEMENT_ENABLED=false \
   -e XPACK_MONITORING_ENABLED=false \
   --rm \
