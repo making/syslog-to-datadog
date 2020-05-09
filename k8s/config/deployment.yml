@@ -1,0 +1,70 @@
+#@ load("@ytt:data", "data")
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: observability
+  labels:
+    app: logstash 
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+      - name: logstash
+        image: making/syslog-to-datadog
+        env:
+        - name: LS_JAVA_OPTS
+          value: -Dnetworkaddress.cache.ttl=1 -Xms512m -Xmx768m
+        - name: XPACK_MANAGEMENT_ENABLED
+          value: "false"
+        - name: XPACK_MONITORING_ENABLED
+          value: "false"
+        - name: DD_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: logstash
+              key: dd_api_key
+        - name: DD_SOURCE
+          value: #@ data.values.dd_source
+        - name: FOUNDATION
+          value: #@ data.values.foundation
+        - name: PIPELINE_HASH
+          value: #@ data.values.pipeline_hash
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            memory: 768Mi
+        ports:
+        - containerPort: 5514
+          name: syslog
+          protocol: TCP
+        readinessProbe:
+          tcpSocket:
+            port: 5514
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+        livenessProbe:
+          tcpSocket:
+            port: 5514
+          initialDelaySeconds: 120
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - mountPath: /usr/share/logstash/pipeline
+          name: logstash-pipeline
+      volumes:
+      - configMap:
+          name: logstash-pipeline
+        name: logstash-pipeline

@@ -1,0 +1,15 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: logstash
+  namespace: observability
+spec:
+  type: LoadBalancer
+  selector:
+    app: logstash
+  ports:
+  - protocol: TCP
+    port: 5514
+    targetPort: 5514
+    nodePort: 30514
+    name: logstash

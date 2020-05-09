@@ -1,0 +1,230 @@
+apiVersion: v1
+data:
+  filter-00-prefilter.conf: |-
+    filter {
+        ruby {
+            code => 'event.cancel if event.get("message") == "\u0000"'
+        }
+        mutate {
+            remove_field => [ "host", "port" ]
+        }
+        if [type] == "" {
+            mutate {
+                add_field => [ "type", "unknown" ]
+            }
+        }
+        if [message] =~ /^\s*$/ or [@message] =~ /^#.*$/ {
+            drop { }
+        }
+        mutate {
+            strip => [ "message" ]
+        }
+    }
+  filter-01-syslog.conf: "filter {\n    grok {\n        id => \"parse-syslog\"\n        match
+    => { \"message\" => \"(?:%{INT:syslog6587_msglen} )?<%{POSINT:syslog_pri}>(%{SPACE})?(?:%{NONNEGINT:syslog5424_ver}
+    )?(?:%{SYSLOGTIMESTAMP:syslog_timestamp}|%{TIMESTAMP_ISO8601:syslog_timestamp})
+    %{DATA:syslog_hostname} %{DATA:syslog_program}(?:\\[%{POSINT:syslog_pid}\\])?(:)?
+    %{GREEDYDATA:syslog_message}\" }\n        tag_on_failure => [ \"plain_tcp\" ]\n
+    \   }\n    if [syslog_hostname] {\n        syslog_pri { }\n        date {\n            id
+    => \"parse-syslog-date\"\n            match => [ \"syslog_timestamp\", \"MMM  d
+    HH:mm:ss\", \"MMM dd HH:mm:ss\", \"ISO8601\" ]\n            timezone => \"UTC\"\n
+    \           remove_field => \"syslog_timestamp\"\n        }\n        mutate {\n
+    \           convert => [ \"syslog5424_ver\", \"integer\" ]\n            convert
+    => [ \"syslog6587_msglen\", \"integer\" ]\n        }\n        if [syslog5424_ver]
+    == 1 {\n            grok {\n                id => \"parse-syslog5424\"\n                match
+    => [ \"syslog_message\", \"(?:%{DATA:syslog_procid}|\\-) (?:%{DATA:syslog_msgid}|\\-)(?:
+    %{SYSLOG5424SD:syslog_sd}| \\-)? %{GREEDYDATA:syslog_message}\" ]\n                overwrite
+    => [ \"syslog_message\" ]\n            }\n            if [syslog_sd] {\n                grok
+    {\n                    id => \"parse-syslog-sd\"\n                    match =>
+    [ \"syslog_sd\", \"\\[%{DATA:syslog_sd_id} (?<syslog_sd_params_raw>[^\\]]+)\\]\"
+    ]\n                    remove_field => [ \"syslog_sd\" ]\n                }\n
+    \               if [syslog_sd_params_raw] {\n                    kv {\n                        id
+    => \"parse-syslog-kv\"\n                        source => \"syslog_sd_params_raw\"\n
+    \                       target => \"syslog_sd_params\"\n                        remove_field
+    => [ \"syslog_sd_params_raw\" ]\n                    }\n                    mutate
+    {\n                        # map known params\n                        rename
+    => { \"[syslog_sd_params][__v1_type]\" => \"__v1_type\" }\n                        rename
+    => { \"[syslog_sd_params][deployment]\" => \"deployment\" }\n                        rename
+    => { \"[syslog_sd_params][ip]\" => \"ip\" }\n                        rename =>
+    { \"[syslog_sd_params][job]\" => \"job\" }\n                        rename =>
+    { \"[syslog_sd_params][origin]\" => \"origin\" }\n                        rename
+    => { \"[syslog_sd_params][product]\" => \"product\" }\n                        rename
+    => { \"[syslog_sd_params][source_type]\" => \"source_type\" }\n                        rename
+    => { \"[syslog_sd_params][system_domain]\" => \"system_domain\" }\n                        rename
+    => { \"[syslog_sd_params][index]\" => \"index\" }\n                        rename
+    => { \"[syslog_sd_params][instance_id]\" => \"instance_id\" }\n                        rename
+    => { \"[syslog_sd_params][placement_tag]\" => \"placement_tag\" }\n                        rename
+    => { \"[syslog_sd_params][process_instance_id]\" => \"process_instance_id\" }\n
+    \                       rename => { \"[syslog_sd_params][process_id]\" => \"process_id\"
+    }\n                        rename => { \"[syslog_sd_params][process_type]\" =>
+    \"process_type\" }\n                        rename => { \"[syslog_sd_params][source_id]\"
+    => \"source_id\" }\n                        # PAS\n                        rename
+    => { \"[syslog_sd_params][az]\" => \"az\" }\n                        rename =>
+    { \"[syslog_sd_params][group]\" => \"group\" }\n                        rename
+    => { \"[syslog_sd_params][id]\" => \"id\" }\n                        rename =>
+    { \"[syslog_sd_params][app_name]\" => \"app_name\" }\n                        rename
+    => { \"[syslog_sd_params][app_id]\" => \"app_id\" }\n                        rename
+    => { \"[syslog_sd_params][component]\" => \"component\" }\n                        rename
+    => { \"[syslog_sd_params][organization_name]\" => \"organization_name\" }\n                        rename
+    => { \"[syslog_sd_params][organization_id]\" => \"organization_id\" }\n                        rename
+    => { \"[syslog_sd_params][space_name]\" => \"space_name\" }\n                        rename
+    => { \"[syslog_sd_params][space_id]\" => \"space_id\" }\n\n                        #
+    PKS                     \n                        rename => { \"[syslog_sd_params][container_name]\"
+    => \"container_name\" }\n                        rename => { \"[syslog_sd_params][namespace_name]\"
+    => \"space_name\" }\n                        rename => { \"[syslog_sd_params][object_name]\"
+    => \"object_name\" }\n                        rename => { \"[syslog_sd_params][pod-template-hash]\"
+    => \"pod-template-hash\" }\n                        rename => { \"[syslog_sd_params][vm_id]\"
+    => \"vm_id\" }\n                        rename => { \"[syslog_sd_params][app]\"
+    => \"app_name\" }   \n                        rename => { \"[syslog_sd_params][k8s-app]\"
+    => \"app_name\" }\n\n                    }\n                }\n            }\n
+    \       }\n        mutate {\n            rename => { \"syslog_hostname\" => \"hostname\"
+    }\n            rename => { \"syslog_program\" => \"service\" }\n            rename
+    => { \"syslog_message\" => \"message\" }\n        }\n        if [space_name] {\n
+    \           if [app_name] {\n                ruby {\n                    id =>
+    \"service-for-k8s-app\"\n                    code => 'event.set(\"service\", event.get(\"space_name\")
+    + \"/\" + event.get(\"app_name\"))'\n                }\n            } else if
+    [container_name] {\n                ruby {\n                    id => \"service-for-k8s-container\"\n
+    \                   code => 'event.set(\"service\", event.get(\"space_name\")
+    + \"/\" + event.get(\"container_name\"))'\n                }\n            }\n
+    \       }        \n    }\n}"
+  filter-02-cf.conf: |-
+    filter {
+    }
+  filter-03-gorouter.conf: |-
+    filter {
+        if [source_type] == "RTR" or [service] == "gorouter" {
+            grok {
+                id => "parse-gorouter"
+                match => { "message" => '%{URIHOST:request_host} %{NOTSPACE} \[%{TIMESTAMP_ISO8601:access_timestamp}\] \"%{WORD:request_method} %{URIPATHPARAM:request_url} %{SYSLOGPROG:request_protocol}\" %{NUMBER:status_code:int} %{NUMBER:bytes_received:int} %{NUMBER:bytes_sent:int} \"%{NOTSPACE:referer}\" \"%{DATA:user_agent}\" \"%{URIHOST:remote_address}\" \"%{URIHOST:backend_address}\" x_forwarded_for:\"%{DATA:x_forwarded_for}\" x_forwarded_proto:\"%{DATA:x_forwarded_proto}\" vcap_request_id:\"%{DATA:x_vcap_request_id}\" response_time:%{NUMBER:response_time:float}( gorouter_time:%{NUMBER:gorouter_time:float})?( app_time:%{NUMBER:app_time:float})? app_id:\"%{DATA:app_td}\" app_index:\"%{DATA:app_index}\" x_b3_traceid:\"%{DATA:trace_id}\" x_b3_spanid:\"%{DATA:span_id}\" x_b3_parentspanid:\"%{DATA:parent_span_id}\"( b3:\"%{DATA:b3}\")?' }
+                add_tag => [ "gorouter" ]
+            }
+            if [access_timestamp] {
+                date {
+                    id => "parse-gorouter-date"
+                    match => [ "access_timestamp", "ISO8601" ]
+                    timezone => "UTC"
+                    target => "@timestamp"
+                    remove_field => "access_timestamp"
+                }
+            }
+        }
+    }
+  filter-04-spring.conf: |
+    filter {
+        if ![deployment] and ([source_type] == "APP/PROC/WEB" or ![source_type]) {
+            grok {
+                id => "parse-spring"
+                match => [ "message",
+                        "(?<timestamp>%{YEAR}-%{MONTHNUM}-%{MONTHDAY} %{TIME})\s+%{LOGLEVEL:level} (\[%{DATA:application},%{DATA:trace_id},%{DATA:span_id},%{DATA:exported}\])?\s*%{NUMBER:pid} --- \[\s*%{DATA:thread}\] %{DATA:logger}\s+:\s+%{GREEDYDATA:message}"]
+                overwrite => [ "message" ]
+                add_tag => [ "spring_boot" ]
+                tag_on_failure => [ "not_spring" ]
+            }
+            if [timestamp] {
+                date {
+                    id => "parse-spring-date"
+                    match => [ "timestamp", "ISO8601" ]
+                    timezone => "UTC"
+                    target => "@timestamp"
+                    remove_field => "timestamp"
+                }
+            }
+            if ("spring_boot" in [tags]) {
+                ruby {
+                    id => "re-line-break"
+                    code => 'event.set("message", event.get("message").gsub("@n@", "\n").gsub("u0009", "\t"))'
+                }
+            }
+        }
+    }
+  filter-05-datadog.conf: |
+    filter {
+      mutate {
+        add_field => {
+          "ddsource" => "${DD_SOURCE}"
+          "ddtags"   => "foundation:${FOUNDATION}"
+        }
+      }
+    }
+  filter-05-pks-logsink.conf: |-
+    filter {
+        if [space_name] == "kube-system" or [space] == "monitoring" {
+            drop { }
+        }
+    }
+  filter-06-pas.conf: |
+    filter {
+        if [service] == "bosh-dns" or [service] == "loggr-syslog-agent" or [service] == "audispd" or [service] == "dd-agent" {
+            drop { }
+        }
+    }
+  filter-99-cleanup.conf: |-
+    filter {
+        mutate {
+            id => "cleanup-syslog"
+            # Remove syslog_ fields
+            remove_field => "syslog_facility"
+            remove_field => "syslog_facility_code"
+            remove_field => "syslog_severity"
+            remove_field => "syslog_severity_code"
+            remove_field => "syslog_sd_id"
+            remove_field => "syslog_msgid"
+            remove_field => "syslog_pri"
+            remove_field => "syslog_procid"
+            remove_field => "syslog6587_msglen"
+            remove_field => "syslog5424_ver"
+            # Remove Syslog Drain fields
+            remove_field => "product"
+            remove_field => "process_id"
+            remove_field => "process_instance_id"
+            remove_field => "process_type"
+            remove_field => "source_id"
+            remove_field => "__v1_type"
+            # Remote GoRouter fields
+            remove_field => "app_td"
+            remove_field => "port"
+            remove_field => "program"
+            remove_field => "request_protocol"
+            remove_field => "remote_address"
+            remove_field => "backend_address"
+            remove_field => "x_forwarded_proto"
+            remove_field => "x_forwarded_for"
+            remove_field => "parent_span_id"
+            remove_field => "b3"
+            remove_field => "x_vcap_request_id"
+            # Reve CF fields
+            remove_field => "organization_id"
+            remove_field => "space_id"
+            # Remove PKS fields
+            remove_field => "pod-template-hash"
+            remove_field => "object_name"
+            # Cleanup
+            remove_field => "@version"
+        }
+    }
+  input-01-syslog.conf: |-
+    input {
+        tcp {
+            id => "input-syslog"
+            add_field => [ "type", "syslog" ]
+            port => 5514
+        }
+    }
+  output-02-stdout.conf: |-
+    output {
+        stdout {
+            id => "output-stdout"
+            codec => json_lines
+        }
+    }
+  output-03-datadog.conf: |-
+    output {
+        datadog_logs {
+            api_key => "${DD_API_KEY}"
+        }
+    }
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: logstash-pipeline
+  namespace: observability
