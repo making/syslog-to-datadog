@@ -69,7 +69,9 @@ data:
     => { \"[syslog_sd_params][organization_name]\" => \"organization_name\" }\n                        rename
     => { \"[syslog_sd_params][organization_id]\" => \"organization_id\" }\n                        rename
     => { \"[syslog_sd_params][space_name]\" => \"space_name\" }\n                        rename
-    => { \"[syslog_sd_params][space_id]\" => \"space_id\" }\n                        #
+    => { \"[syslog_sd_params][space_id]\" => \"space_id\" }\n                        rename
+    => { \"[syslog_sd_params][metrics_version]\" => \"metrics_version\" }\n                        rename
+    => { \"[syslog_sd_params][metric_version]\" => \"metrics_version\" }\n                        #
     PKS                     \n                        rename => { \"[syslog_sd_params][container_name]\"
     => \"container_name\" }\n                        rename => { \"[syslog_sd_params][namespace_name]\"
     => \"space_name\" }\n                        rename => { \"[syslog_sd_params][object_name]\"
@@ -78,15 +80,6 @@ data:
     => \"vm_id\" }\n                        rename => { \"[syslog_sd_params][app]\"
     => \"app_name\" }   \n                        rename => { \"[syslog_sd_params][k8s-app]\"
     => \"app_name\" }\n\n                    }\n                }\n            }\n
-    \       }\n        if [metrics] {\n            # Aggregate Drain\n            grok
-    {\n                id => \"parse-metrics\"\n                match => [ \"metrics\",
-    \"\\[%{DATA:metrics_type}@%{POSINT:metrics_sd_id} (?<metrics_params_raw>[^\\]]+)\\]\"
-    ]\n                remove_field => [ \"metrics_sd_id\" ]\n            }\n            kv
-    {\n                id => \"parse-metrics-kv\"\n                source => \"metrics_params_raw\"\n
-    \               target => \"metrics_params\"\n                remove_field =>
-    [ \"metrics_params_raw\" ]\n            }                     \n            mutate
-    {\n                rename => { \"metrics\" => \"syslog_message\" }\n                rename
-    => { \"syslog_sd_params\" => \"metrics_tags\" }                \n            }\n
     \       }\n        ruby {\n            code => 'event.set(\"raw_message\", event.get(\"message\"))'\n
     \       }        \n        mutate {\n            rename => { \"syslog_hostname\"
     => \"hostname\" }\n            rename => { \"syslog_program\" => \"service\" }\n
@@ -139,7 +132,40 @@ data:
             }
         }
     }
-  filter-05-datadog.conf: |
+  filter-05-pks-logsink.conf: |-
+    filter {
+        if [space_name] == "kube-system" or [space] == "monitoring" {
+            drop { }
+        }
+    }
+  filter-06-pas.conf: "filter {\n    if [service] == \"bosh-dns\" or [service] ==
+    \"loggr-syslog-agent\" or [service] == \"audispd\" or [service] == \"dd-agent\"
+    {\n        drop { }\n    }\n\n    if [metrics] {\n        # Aggregate Drain\n
+    \       grok {\n            id => \"parse-metrics\"\n            match => [ \"metrics\",
+    \"\\[%{DATA:metrics_type}@%{POSINT:metrics_sd_id} (?<metrics_params_raw>[^\\]]+)\\]\"
+    ]\n            remove_field => [ \"metrics_sd_id\" ]\n        }\n        kv {\n
+    \           id => \"parse-metrics-kv\"\n            source => \"metrics_params_raw\"\n
+    \           target => \"metrics_params\"\n            remove_field => [ \"metrics_params_raw\"
+    ]\n        }\n        mutate {\n            rename => { \"metrics\" => \"message\"
+    }\n            rename => { \"syslog_sd_params\" => \"metrics_tags\" }\n            rename
+    => { \"[metrics_params][name]\" => \"metrics_name\" }\n        }\n        if [metrics_tags]
+    {\n            ruby {\n                code => 'event.set(\"message\", event.get(\"message\")
+    + \" \" + event.get(\"metrics_tags\").to_s)'\n            }\n        }\n        if
+    [metrics_type] == \"gauge\" {\n            mutate {\n                rename =>
+    { \"[metrics_params][value]\" => \"metrics_value\" }\n                rename =>
+    { \"[metrics_params][unit]\" => \"metrics_unit\" }\n                convert =>
+    [ \"metrics_value\", \"float\" ]\n            }       \n        } else if [metrics_type]
+    == \"counter\" {\n            mutate {\n                rename => { \"[metrics_params][total]\"
+    => \"metrics_total\" }\n                rename => { \"[metrics_params][delta]\"
+    => \"metrics_delta\" }\n                convert => [ \"metrics_total\", \"integer\"
+    ]\n                convert => [ \"metrics_delta\", \"integer\" ]\n            }
+    \       \n        } else if [metrics_type] == \"timer\" {\n            mutate
+    {\n                rename => { \"[metrics_params][start]\" => \"metrics_start\"
+    }\n                rename => { \"[metrics_params][stop]\" => \"metrics_stop\"
+    }\n                convert => [ \"metrics_start\", \"integer\" ]\n                convert
+    => [ \"metrics_stop\", \"integer\" ]\n            }        \n        }\n    }
+    \   \n}\n"
+  filter-07-datadog.conf: |
     filter {
         ruby {
             id => "put-ddsource"
@@ -155,18 +181,6 @@ data:
                     code => 'event.set("ddsource", event.get("ddsource") + "-logs")'
                 }
             }
-        }
-    }
-  filter-05-pks-logsink.conf: |-
-    filter {
-        if [space_name] == "kube-system" or [space] == "monitoring" {
-            drop { }
-        }
-    }
-  filter-06-pas.conf: |
-    filter {
-        if [service] == "bosh-dns" or [service] == "loggr-syslog-agent" or [service] == "audispd" or [service] == "dd-agent" {
-            drop { }
         }
     }
   filter-99-cleanup.conf: |-
