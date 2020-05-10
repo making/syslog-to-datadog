@@ -49,6 +49,15 @@ spec:
         - containerPort: 5516
           name: aggregate
           protocol: TCP
+        - containerPort: 5517
+          name: logsink
+          protocol: TCP
+        - containerPort: 5518
+          name: pas
+          protocol: TCP
+        - containerPort: 9600
+          name: http
+          protocol: TCP
         readinessProbe:
           tcpSocket:
             port: 5514

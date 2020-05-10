@@ -23,3 +23,18 @@ spec:
     targetPort: 5516
     nodePort: 30516
     name: aggregate
+  - protocol: TCP
+    port: 5517
+    targetPort: 5517
+    nodePort: 30517
+    name: logsink
+  - protocol: TCP
+    port: 5518
+    targetPort: 5518
+    nodePort: 30518
+    name: pas
+  - protocol: TCP
+    port: 9600
+    targetPort: 9600
+    nodePort: 30600
+    name: http

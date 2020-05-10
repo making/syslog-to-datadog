@@ -32,8 +32,9 @@ data:
     \           convert => [ \"syslog5424_ver\", \"integer\" ]\n            convert
     => [ \"syslog6587_msglen\", \"integer\" ]\n        }\n        if [syslog5424_ver]
     == 1 {\n            grok {\n                id => \"parse-syslog5424\"\n                match
-    => [ \"syslog_message\", \"(?:%{DATA:syslog_procid}|\\-) (?:%{DATA:syslog_msgid}|\\-)(?:
-    %{SYSLOG5424SD:syslog_sd}| \\-)? %{GREEDYDATA:syslog_message}\" ]\n                overwrite
+    => [ \"syslog_message\",\n                           \"(?:%{DATA:syslog_procid}|\\-)
+    (?:%{DATA:syslog_msgid}|\\-)(?:(?: %{SYSLOG5424SD:metrics}%{SYSLOG5424SD:syslog_sd})|(?:
+    %{SYSLOG5424SD:syslog_sd}| \\-)? %{GREEDYDATA:syslog_message})\" ]\n                overwrite
     => [ \"syslog_message\" ]\n            }\n            if [syslog_sd] {\n                grok
     {\n                    id => \"parse-syslog-sd\"\n                    match =>
     [ \"syslog_sd\", \"\\[%{DATA:syslog_sd_id} (?<syslog_sd_params_raw>[^\\]]+)\\]\"
@@ -77,6 +78,15 @@ data:
     => \"vm_id\" }\n                        rename => { \"[syslog_sd_params][app]\"
     => \"app_name\" }   \n                        rename => { \"[syslog_sd_params][k8s-app]\"
     => \"app_name\" }\n\n                    }\n                }\n            }\n
+    \       }\n        if [metrics] {\n            # Aggregate Drain\n            grok
+    {\n                id => \"parse-metrics\"\n                match => [ \"metrics\",
+    \"\\[%{DATA:metrics_type}@%{POSINT:metrics_sd_id} (?<metrics_params_raw>[^\\]]+)\\]\"
+    ]\n                remove_field => [ \"metrics_sd_id\" ]\n            }\n            kv
+    {\n                id => \"parse-metrics-kv\"\n                source => \"metrics_params_raw\"\n
+    \               target => \"metrics_params\"\n                remove_field =>
+    [ \"metrics_params_raw\" ]\n            }                     \n            mutate
+    {\n                rename => { \"metrics\" => \"syslog_message\" }\n                rename
+    => { \"syslog_sd_params\" => \"metrics_tags\" }                \n            }\n
     \       }\n        ruby {\n            code => 'event.set(\"raw_message\", event.get(\"message\"))'\n
     \       }        \n        mutate {\n            rename => { \"syslog_hostname\"
     => \"hostname\" }\n            rename => { \"syslog_program\" => \"service\" }\n
@@ -93,7 +103,7 @@ data:
     }
   filter-03-gorouter.conf: |-
     filter {
-        if [source_type] == "RTR" or [service] == "gorouter" {
+        if [source_type] == "RTR" or (![metrics_type] and [service] == "gorouter") {
             grok {
                 id => "parse-gorouter"
                 match => { "message" => '%{URIHOST:request_host} %{NOTSPACE} \[%{TIMESTAMP_ISO8601:access_timestamp}\] \"%{WORD:request_method} %{URIPATHPARAM:request_url} %{SYSLOGPROG:request_protocol}\" %{NUMBER:status_code:int} %{NUMBER:bytes_received:int} %{NUMBER:bytes_sent:int} \"%{NOTSPACE:referer}\" \"%{DATA:user_agent}\" \"%{URIHOST:remote_address}\" \"%{URIHOST:backend_address}\" x_forwarded_for:\"%{DATA:x_forwarded_for}\" x_forwarded_proto:\"%{DATA:x_forwarded_proto}\" vcap_request_id:\"%{DATA:x_vcap_request_id}\" response_time:%{NUMBER:response_time:float}( gorouter_time:%{NUMBER:gorouter_time:float})?( app_time:%{NUMBER:app_time:float})? app_id:\"%{DATA:app_td}\" app_index:\"%{DATA:app_index}\" x_b3_traceid:\"%{DATA:trace_id}\" x_b3_spanid:\"%{DATA:span_id}\" x_b3_parentspanid:\"%{DATA:parent_span_id}\"( b3:\"%{DATA:b3}\")?' }
@@ -112,7 +122,7 @@ data:
     }
   filter-04-spring.conf: |
     filter {
-        if [source_type] == "APP/PROC/WEB" or ![source_type] {
+        if [source_type] == "APP/PROC/WEB" or [type] == "logsink" {
             grok {
                 id => "parse-spring"
                 match => [ "message",
@@ -134,6 +144,17 @@ data:
         ruby {
             id => "put-ddsource"
             code => 'event.set("ddsource", event.get("type"))'
+        }
+        if [ddsource] == "aggregate" {
+            if [metrics_type] {
+                ruby {
+                    code => 'event.set("ddsource", event.get("ddsource") + "-metrics")'
+                }
+            } else {
+                ruby {
+                    code => 'event.set("ddsource", event.get("ddsource") + "-logs")'
+                }
+            }
         }
     }
   filter-05-pks-logsink.conf: |-
@@ -209,12 +230,15 @@ data:
             add_field => [ "type", "aggregate" ]
             port => 5516
         }
-    }
-  output-02-stdout.conf: |-
-    output {
-        stdout {
-            id => "output-stdout"
-            codec => json_lines
+        tcp {
+            id => "input-logsink"
+            add_field => [ "type", "logsink" ]
+            port => 5517
+        }
+        tcp {
+            id => "input-pas"
+            add_field => [ "type", "pas" ]
+            port => 5518
         }
     }
   output-03-datadog.conf: |-
