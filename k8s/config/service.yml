@@ -12,4 +12,14 @@ spec:
     port: 5514
     targetPort: 5514
     nodePort: 30514
-    name: logstash
+    name: syslog
+  - protocol: TCP
+    port: 5515
+    targetPort: 5515
+    nodePort: 30515
+    name: drain
+  - protocol: TCP
+    port: 5516
+    targetPort: 5516
+    nodePort: 30516
+    name: aggregate

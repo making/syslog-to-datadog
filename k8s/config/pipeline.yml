@@ -68,7 +68,7 @@ data:
     => { \"[syslog_sd_params][organization_name]\" => \"organization_name\" }\n                        rename
     => { \"[syslog_sd_params][organization_id]\" => \"organization_id\" }\n                        rename
     => { \"[syslog_sd_params][space_name]\" => \"space_name\" }\n                        rename
-    => { \"[syslog_sd_params][space_id]\" => \"space_id\" }\n\n                        #
+    => { \"[syslog_sd_params][space_id]\" => \"space_id\" }\n                        #
     PKS                     \n                        rename => { \"[syslog_sd_params][container_name]\"
     => \"container_name\" }\n                        rename => { \"[syslog_sd_params][namespace_name]\"
     => \"space_name\" }\n                        rename => { \"[syslog_sd_params][object_name]\"
@@ -77,16 +77,17 @@ data:
     => \"vm_id\" }\n                        rename => { \"[syslog_sd_params][app]\"
     => \"app_name\" }   \n                        rename => { \"[syslog_sd_params][k8s-app]\"
     => \"app_name\" }\n\n                    }\n                }\n            }\n
-    \       }\n        mutate {\n            rename => { \"syslog_hostname\" => \"hostname\"
-    }\n            rename => { \"syslog_program\" => \"service\" }\n            rename
-    => { \"syslog_message\" => \"message\" }\n        }\n        if [space_name] {\n
-    \           if [app_name] {\n                ruby {\n                    id =>
-    \"service-for-k8s-app\"\n                    code => 'event.set(\"service\", event.get(\"space_name\")
-    + \"/\" + event.get(\"app_name\"))'\n                }\n            } else if
-    [container_name] {\n                ruby {\n                    id => \"service-for-k8s-container\"\n
-    \                   code => 'event.set(\"service\", event.get(\"space_name\")
-    + \"/\" + event.get(\"container_name\"))'\n                }\n            }\n
-    \       }        \n    }\n}"
+    \       }\n        ruby {\n            code => 'event.set(\"raw_message\", event.get(\"message\"))'\n
+    \       }        \n        mutate {\n            rename => { \"syslog_hostname\"
+    => \"hostname\" }\n            rename => { \"syslog_program\" => \"service\" }\n
+    \           rename => { \"syslog_message\" => \"message\" }\n        }\n        if
+    [space_name] {\n            if [app_name] {\n                ruby {\n                    id
+    => \"service-for-k8s-app\"\n                    code => 'event.set(\"service\",
+    event.get(\"space_name\") + \"/\" + event.get(\"app_name\"))'\n                }\n
+    \           } else if [container_name] {\n                ruby {\n                    id
+    => \"service-for-k8s-container\"\n                    code => 'event.set(\"service\",
+    event.get(\"space_name\") + \"/\" + event.get(\"container_name\"))'\n                }\n
+    \           }\n        }        \n    }\n}"
   filter-02-cf.conf: |-
     filter {
     }
@@ -111,7 +112,7 @@ data:
     }
   filter-04-spring.conf: |
     filter {
-        if ![deployment] and ([source_type] == "APP/PROC/WEB" or ![source_type]) {
+        if [source_type] == "APP/PROC/WEB" or ![source_type] {
             grok {
                 id => "parse-spring"
                 match => [ "message",
@@ -119,15 +120,6 @@ data:
                 overwrite => [ "message" ]
                 add_tag => [ "spring_boot" ]
                 tag_on_failure => [ "not_spring" ]
-            }
-            if [timestamp] {
-                date {
-                    id => "parse-spring-date"
-                    match => [ "timestamp", "ISO8601" ]
-                    timezone => "UTC"
-                    target => "@timestamp"
-                    remove_field => "timestamp"
-                }
             }
             if ("spring_boot" in [tags]) {
                 ruby {
@@ -139,12 +131,10 @@ data:
     }
   filter-05-datadog.conf: |
     filter {
-      mutate {
-        add_field => {
-          "ddsource" => "${DD_SOURCE}"
-          "ddtags"   => "foundation:${FOUNDATION}"
+        ruby {
+            id => "put-ddsource"
+            code => 'event.set("ddsource", event.get("type"))'
         }
-      }
     }
   filter-05-pks-logsink.conf: |-
     filter {
@@ -208,6 +198,16 @@ data:
             id => "input-syslog"
             add_field => [ "type", "syslog" ]
             port => 5514
+        }
+        tcp {
+            id => "input-drain"
+            add_field => [ "type", "drain" ]
+            port => 5515
+        }
+        tcp {
+            id => "input-aggregate"
+            add_field => [ "type", "aggregate" ]
+            port => 5516
         }
     }
   output-02-stdout.conf: |-

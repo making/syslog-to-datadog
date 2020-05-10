@@ -2,6 +2,4 @@
 #@data/values
 ---
 dd_api_key: CHANGEME
-dd_source: syslog
-foundation: sandbox
 pipeline_hash: TODO
