@@ -94,26 +94,7 @@ data:
   filter-02-cf.conf: |-
     filter {
     }
-  filter-03-gorouter.conf: |-
-    filter {
-        if [source_type] == "RTR" or (![metrics_type] and [service] == "gorouter") {
-            grok {
-                id => "parse-gorouter"
-                match => { "message" => '%{URIHOST:request_host} %{NOTSPACE} \[%{TIMESTAMP_ISO8601:access_timestamp}\] \"%{WORD:request_method} %{URIPATHPARAM:request_url} %{SYSLOGPROG:request_protocol}\" %{NUMBER:status_code:int} %{NUMBER:bytes_received:int} %{NUMBER:bytes_sent:int} \"%{NOTSPACE:referer}\" \"%{DATA:user_agent}\" \"%{URIHOST:remote_address}\" \"%{URIHOST:backend_address}\" x_forwarded_for:\"%{DATA:x_forwarded_for}\" x_forwarded_proto:\"%{DATA:x_forwarded_proto}\" vcap_request_id:\"%{DATA:x_vcap_request_id}\" response_time:%{NUMBER:response_time:float}( gorouter_time:%{NUMBER:gorouter_time:float})?( app_time:%{NUMBER:app_time:float})? app_id:\"%{DATA:app_td}\" app_index:\"%{DATA:app_index}\" x_b3_traceid:\"%{DATA:trace_id}\" x_b3_spanid:\"%{DATA:span_id}\" x_b3_parentspanid:\"%{DATA:parent_span_id}\"( b3:\"%{DATA:b3}\")?' }
-                add_tag => [ "gorouter" ]
-            }
-            if [access_timestamp] {
-                date {
-                    id => "parse-gorouter-date"
-                    match => [ "access_timestamp", "ISO8601" ]
-                    timezone => "UTC"
-                    target => "@timestamp"
-                    remove_field => "access_timestamp"
-                }
-            }
-        }
-    }
-  filter-04-spring.conf: |
+  filter-03-spring.conf: |
     filter {
         if [source_type] == "APP/PROC/WEB" or [type] == "logsink" {
             grok {
@@ -128,6 +109,30 @@ data:
                 ruby {
                     id => "re-line-break"
                     code => 'event.set("message", event.get("message").gsub("@n@", "\n").gsub("u0009", "\t"))'
+                }
+            }
+        }
+    }
+  filter-04-gorouter.conf: |-
+    filter {
+        if [source_type] == "RTR" or [logger] == "RTR" or (![metrics_type] and [service] == "gorouter") {
+            # avoid duplicates
+            mutate {
+                remove_field => "trace_id"
+                remove_field => "span_id"
+            }
+            grok {
+                id => "parse-gorouter"
+                match => { "message" => '%{URIHOST:request_host} %{NOTSPACE} \[%{TIMESTAMP_ISO8601:access_timestamp}\] \"%{WORD:request_method} %{URIPATHPARAM:request_url} %{SYSLOGPROG:request_protocol}\" %{NUMBER:status_code:int} %{NUMBER:bytes_received:int} %{NUMBER:bytes_sent:int} \"%{NOTSPACE:referer}\" \"%{DATA:user_agent}\" \"%{URIHOST:remote_address}\" \"%{DATA:backend_address}\" x_forwarded_for:\"%{DATA:x_forwarded_for}\" x_forwarded_proto:\"%{DATA:x_forwarded_proto}\" vcap_request_id:\"%{DATA:x_vcap_request_id}\" response_time:%{NUMBER:response_time:float}( gorouter_time:%{NUMBER:gorouter_time:float})?( app_time:%{NUMBER:app_time:float})? app_id:\"%{DATA:app_td}\" app_index:\"%{DATA:app_index}\" x_b3_traceid:\"%{DATA:trace_id}\" x_b3_spanid:\"%{DATA:span_id}\" x_b3_parentspanid:\"%{DATA:parent_span_id}\"( b3:\"%{DATA:b3}\")?' }
+                add_tag => [ "gorouter" ]
+            }
+            if [access_timestamp] {
+                date {
+                    id => "parse-gorouter-date"
+                    match => [ "access_timestamp", "ISO8601" ]
+                    timezone => "UTC"
+                    target => "@timestamp"
+                    remove_field => "access_timestamp"
                 }
             }
         }
@@ -180,6 +185,14 @@ data:
                 ruby {
                     code => 'event.set("ddsource", event.get("ddsource") + "-logs")'
                 }
+            }
+        }
+    }
+  filter-30-zipkin.conf: |-
+    filter {
+        if [trace_id] {
+            ruby {
+                code => 'event.set("zipkin_url", "https://zipkin.dev.ik.am/zipkin/traces/" + event.get("trace_id"))'
             }
         }
     }
