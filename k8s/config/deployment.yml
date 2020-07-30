@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: logstash
-        image: making/syslog-to-datadog
+        image: docker.elastic.co/logstash/logstash:7.6.2
         env:
         - name: LS_JAVA_OPTS
           value: -Dnetworkaddress.cache.ttl=1 -Xms512m -Xmx768m
@@ -27,11 +27,6 @@ spec:
           value: "false"
         - name: XPACK_MONITORING_ENABLED
           value: "false"
-        - name: DD_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: logstash
-              key: dd_api_key
         - name: PIPELINE_HASH
           value: #@ data.values.pipeline_hash
         resources:

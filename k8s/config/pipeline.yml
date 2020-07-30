@@ -20,8 +20,8 @@ data:
             strip => [ "message" ]
         }
     }
-  filter-01-syslog.conf: "filter {\n    grok {\n        id => \"parse-syslog\"\n        match
-    => { \"message\" => \"(?:%{INT:syslog6587_msglen} )?<%{POSINT:syslog_pri}>(%{SPACE})?(?:%{NONNEGINT:syslog5424_ver}
+  filter-01-syslog.conf: "\nfilter {\n    grok {\n        id => \"parse-syslog\"\n
+    \       match => { \"message\" => \"(?:%{INT:syslog6587_msglen} )?<%{POSINT:syslog_pri}>(%{SPACE})?(?:%{NONNEGINT:syslog5424_ver}
     )?(?:%{SYSLOGTIMESTAMP:syslog_timestamp}|%{TIMESTAMP_ISO8601:syslog_timestamp})
     %{DATA:syslog_hostname} %{DATA:syslog_program}(?:\\[%{POSINT:syslog_pid}\\])?(:)?
     %{GREEDYDATA:syslog_message}\" }\n        tag_on_failure => [ \"plain_tcp\" ]\n
@@ -84,13 +84,16 @@ data:
     \       }        \n        mutate {\n            rename => { \"syslog_hostname\"
     => \"hostname\" }\n            rename => { \"syslog_program\" => \"service\" }\n
     \           rename => { \"syslog_message\" => \"message\" }\n        }\n        if
-    [space_name] {\n            if [app_name] {\n                ruby {\n                    id
-    => \"service-for-k8s-app\"\n                    code => 'event.set(\"service\",
-    event.get(\"space_name\") + \"/\" + event.get(\"app_name\"))'\n                }\n
-    \           } else if [container_name] {\n                ruby {\n                    id
-    => \"service-for-k8s-container\"\n                    code => 'event.set(\"service\",
-    event.get(\"space_name\") + \"/\" + event.get(\"container_name\"))'\n                }\n
-    \           }\n        }        \n    }\n}"
+    [organization_name] {\n            ruby {\n                id => \"service-for-cf-app\"\n
+    \               code => 'event.set(\"service\", event.get(\"organization_name\")
+    + \"/\" + event.get(\"space_name\") + \"/\" + event.get(\"app_name\"))'\n            }\n
+    \       } else if [space_name] {\n            if [app_name] {\n                ruby
+    {\n                    id => \"service-for-k8s-app\"\n                    code
+    => 'event.set(\"service\", event.get(\"space_name\") + \"/\" + event.get(\"app_name\"))'\n
+    \               }\n            } else if [container_name] {\n                ruby
+    {\n                    id => \"service-for-k8s-container\"\n                    code
+    => 'event.set(\"service\", event.get(\"space_name\") + \"/\" + event.get(\"container_name\"))'\n
+    \               }\n            }\n        }        \n    }\n}\n"
   filter-02-cf.conf: |-
     filter {
     }
