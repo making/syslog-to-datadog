@@ -159,46 +159,9 @@ data:
     => { \"[metrics_params][name]\" => \"metrics_name\" }\n        }\n        if [metrics_tags]
     {\n            ruby {\n                code => 'event.set(\"message\", event.get(\"message\")
     + \" \" + event.get(\"metrics_tags\").to_s)'\n            }\n        }\n        if
-    [metrics_type] == \"gauge\" {\n            mutate {\n                rename =>
-    { \"[metrics_params][value]\" => \"metrics_value\" }\n                rename =>
-    { \"[metrics_params][unit]\" => \"metrics_unit\" }\n                convert =>
-    [ \"metrics_value\", \"float\" ]\n            }       \n        } else if [metrics_type]
-    == \"counter\" {\n            mutate {\n                rename => { \"[metrics_params][total]\"
-    => \"metrics_total\" }\n                rename => { \"[metrics_params][delta]\"
-    => \"metrics_delta\" }\n                convert => [ \"metrics_total\", \"integer\"
-    ]\n                convert => [ \"metrics_delta\", \"integer\" ]\n            }
-    \       \n        } else if [metrics_type] == \"timer\" {\n            mutate
-    {\n                rename => { \"[metrics_params][start]\" => \"metrics_start\"
-    }\n                rename => { \"[metrics_params][stop]\" => \"metrics_stop\"
-    }\n                convert => [ \"metrics_start\", \"integer\" ]\n                convert
-    => [ \"metrics_stop\", \"integer\" ]\n            }        \n        }\n    }
-    \   \n}\n"
-  filter-07-datadog.conf: |
-    filter {
-        ruby {
-            id => "put-ddsource"
-            code => 'event.set("ddsource", event.get("type"))'
-        }
-        if [ddsource] == "aggregate" {
-            if [metrics_type] {
-                ruby {
-                    code => 'event.set("ddsource", event.get("ddsource") + "-metrics")'
-                }
-            } else {
-                ruby {
-                    code => 'event.set("ddsource", event.get("ddsource") + "-logs")'
-                }
-            }
-        }
-    }
-  filter-30-zipkin.conf: |-
-    filter {
-        if [trace_id] {
-            ruby {
-                code => 'event.set("zipkin_url", "https://zipkin.dev.ik.am/zipkin/traces/" + event.get("trace_id"))'
-            }
-        }
-    }
+    [metrics_type] == \"gauge\" {\n            drop { }     \n        } else if [metrics_type]
+    == \"counter\" {\n            drop { }       \n        } else if [metrics_type]
+    == \"timer\" {\n            drop { }       \n        }\n    }    \n}\n"
   filter-99-cleanup.conf: |-
     filter {
         mutate {
@@ -271,11 +234,9 @@ data:
             port => 5518
         }
     }
-  output-03-datadog.conf: |-
+  output-01-stdout.conf: |-
     output {
-        datadog_logs {
-            api_key => "${DD_API_KEY}"
-        }
+      stdout {}
     }
 kind: ConfigMap
 metadata:
